@@ -1,6 +1,28 @@
 version: '3.8'
 
 services:
+  openldap:
+    image: osixia/openldap:1.5.0
+    container_name: openldap
+    environment:
+      LDAP_ORGANISATION: BionicPRO
+      LDAP_DOMAIN: example.com
+      LDAP_ADMIN_PASSWORD: admin
+      LDAP_CONFIG_PASSWORD: config
+      LDAP_TLS: "false"
+      LDAP_READONLY_USER: "false"
+    ports:
+      - "389:389"
+    volumes:
+      - ./ldap/config.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/config.ldif
+      - openldap-data:/var/lib/ldap
+    healthcheck:
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost", "-b", "dc=example,dc=com", "-D", "cn=admin,dc=example,dc=com", "-w", "admin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   keycloak_db:
     image: postgres:14
     environment:
@@ -29,7 +51,10 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - keycloak_db
+      keycloak_db:
+        condition: service_started
+      openldap:
+        condition: service_healthy
 
   redis:
     image: redis:7-alpine
@@ -78,3 +103,4 @@ services:
 
 volumes:
   redis-data:
+  openldap-data:
