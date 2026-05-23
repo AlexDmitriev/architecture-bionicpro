@@ -13,18 +13,26 @@ import (
 	"bionicpro-auth/internal/config"
 	"bionicpro-auth/internal/keycloak"
 	"bionicpro-auth/internal/middleware"
+	"bionicpro-auth/internal/profile"
 	"bionicpro-auth/internal/session"
 )
 
 type AuthHandler struct {
-	cfg     config.Config
-	store   *session.Store
-	kc      *keycloak.Client
-	sessMgr *middleware.SessionManager
+	cfg      config.Config
+	store    *session.Store
+	kc       *keycloak.Client
+	sessMgr  *middleware.SessionManager
+	profiles *profile.Repository
 }
 
-func NewAuthHandler(cfg config.Config, store *session.Store, kc *keycloak.Client, sessMgr *middleware.SessionManager) *AuthHandler {
-	return &AuthHandler{cfg: cfg, store: store, kc: kc, sessMgr: sessMgr}
+func NewAuthHandler(
+	cfg config.Config,
+	store *session.Store,
+	kc *keycloak.Client,
+	sessMgr *middleware.SessionManager,
+	profiles *profile.Repository,
+) *AuthHandler {
+	return &AuthHandler{cfg: cfg, store: store, kc: kc, sessMgr: sessMgr, profiles: profiles}
 }
 
 func generatePKCE() (verifier, challenge string, err error) {
@@ -42,18 +50,29 @@ func base64URLEncode(data []byte) string {
 	return base64.RawURLEncoding.EncodeToString(data)
 }
 
-func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+func (h *AuthHandler) startLogin(w http.ResponseWriter, r *http.Request, idpHint string) {
 	verifier, challenge, err := generatePKCE()
 	if err != nil {
 		http.Error(w, "failed to generate PKCE", http.StatusInternalServerError)
 		return
 	}
 	state := uuid.NewString()
-	if err := h.store.SavePKCE(r.Context(), state, verifier); err != nil {
+	if err := h.store.SaveOAuthState(r.Context(), state, session.OAuthState{
+		Verifier: verifier,
+		IdpHint:  idpHint,
+	}); err != nil {
 		http.Error(w, "failed to save state", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, h.kc.BuildAuthURL(state, challenge), http.StatusFound)
+	http.Redirect(w, r, h.kc.BuildAuthURL(state, challenge, idpHint), http.StatusFound)
+}
+
+func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	h.startLogin(w, r, "")
+}
+
+func (h *AuthHandler) LoginYandex(w http.ResponseWriter, r *http.Request) {
+	h.startLogin(w, r, "yandex")
 }
 
 func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
@@ -65,17 +84,28 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	verifier, err := h.store.GetPKCE(ctx, state)
-	if err != nil || verifier == "" {
+	oauthState, err := h.store.GetOAuthState(ctx, state)
+	if err != nil || oauthState == nil || oauthState.Verifier == "" {
 		http.Error(w, "invalid or expired state", http.StatusBadRequest)
 		return
 	}
-	_ = h.store.DeletePKCE(ctx, state)
+	_ = h.store.DeleteOAuthState(ctx, state)
 
-	tr, err := h.kc.ExchangeCode(code, verifier)
+	tr, err := h.kc.ExchangeCode(code, oauthState.Verifier)
 	if err != nil {
 		http.Error(w, "token exchange failed: "+err.Error(), http.StatusBadGateway)
 		return
+	}
+
+	ui, err := h.kc.FetchUserInfo(tr.AccessToken)
+	if err != nil {
+		http.Error(w, "userinfo failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	idp := oauthState.IdpHint
+	if idp == "" {
+		idp = ui.IdentityProvider
 	}
 
 	sessionID := uuid.NewString()
@@ -84,12 +114,29 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	if tr.RefreshExpiresIn == 0 {
 		refreshExp = time.Now().Add(24 * time.Hour)
 	}
-	if err := h.store.Save(ctx, sessionID, tr.AccessToken, tr.RefreshToken, accessExp, refreshExp); err != nil {
+
+	sessData := session.Data{
+		AccessToken:      tr.AccessToken,
+		AccessExpiresAt:  accessExp,
+		RefreshExpiresAt: refreshExp,
+		KeycloakSub:      ui.Sub,
+		IdentityProvider: idp,
+	}
+	if err := h.store.Save(ctx, sessionID, sessData, tr.RefreshToken); err != nil {
 		http.Error(w, "failed to save session", http.StatusInternalServerError)
 		return
 	}
 
 	h.sessMgr.SetCookie(w, sessionID)
+
+	if idp == "yandex" && h.profiles != nil {
+		hasConsent, err := h.profiles.HasConsent(ctx, ui.Sub)
+		if err == nil && !hasConsent {
+			http.Redirect(w, r, h.cfg.FrontendURL+"/consent", http.StatusFound)
+			return
+		}
+	}
+
 	http.Redirect(w, r, h.cfg.FrontendURL, http.StatusFound)
 }
 
@@ -100,11 +147,24 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]bool{"authenticated": false})
 		return
 	}
+
+	resp := map[string]interface{}{
+		"authenticated":      true,
+		"access_expires_at":  data.AccessExpiresAt.UTC().Format(time.RFC3339),
+		"identity_provider":  data.IdentityProvider,
+		"needs_consent":      false,
+	}
+
+	if data.IdentityProvider == "yandex" && h.profiles != nil && data.KeycloakSub != "" {
+		hasConsent, err := h.profiles.HasConsent(r.Context(), data.KeycloakSub)
+		if err == nil {
+			resp["needs_consent"] = !hasConsent
+			resp["consent_granted"] = hasConsent
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"authenticated":     true,
-		"access_expires_at": data.AccessExpiresAt.UTC().Format(time.RFC3339),
-	})
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {

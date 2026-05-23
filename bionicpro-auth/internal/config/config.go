@@ -20,6 +20,8 @@ type Config struct {
 	CookieName        string
 	CookieSecure      bool
 	EncryptionKey     []byte
+	DatabaseURL       string
+	YandexIdPAlias    string
 }
 
 func Load() Config {
@@ -43,6 +45,8 @@ func Load() Config {
 		CookieName:       env("SESSION_COOKIE_NAME", "bionicpro_session"),
 		CookieSecure:     envBool("COOKIE_SECURE", false),
 		EncryptionKey:    []byte(key)[:32],
+		DatabaseURL:      env("DATABASE_URL", "postgres://profiles:profiles@profiles_db:5432/profiles?sslmode=disable"),
+		YandexIdPAlias:   env("YANDEX_IDP_ALIAS", "yandex"),
 	}
 }
 

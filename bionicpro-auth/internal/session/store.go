@@ -11,11 +11,18 @@ import (
 
 const sessionKeyPrefix = "session:"
 
+type OAuthState struct {
+	Verifier string `json:"verifier"`
+	IdpHint  string `json:"idp_hint,omitempty"`
+}
+
 type Data struct {
-	AccessToken              string    `json:"access_token"`
-	RefreshTokenEncrypted    string    `json:"refresh_token_enc"`
-	AccessExpiresAt          time.Time `json:"access_expires_at"`
-	RefreshExpiresAt         time.Time `json:"refresh_expires_at,omitempty"`
+	AccessToken           string    `json:"access_token"`
+	RefreshTokenEncrypted string    `json:"refresh_token_enc"`
+	AccessExpiresAt       time.Time `json:"access_expires_at"`
+	RefreshExpiresAt      time.Time `json:"refresh_expires_at,omitempty"`
+	KeycloakSub           string    `json:"keycloak_sub,omitempty"`
+	IdentityProvider      string    `json:"identity_provider,omitempty"`
 }
 
 type Store struct {
@@ -32,17 +39,12 @@ func (s *Store) key(id string) string {
 	return sessionKeyPrefix + id
 }
 
-func (s *Store) Save(ctx context.Context, id string, accessToken, refreshToken string, accessExpiresAt, refreshExpiresAt time.Time) error {
+func (s *Store) Save(ctx context.Context, id string, data Data, refreshToken string) error {
 	encRefresh, err := Encrypt(s.encKey, refreshToken)
 	if err != nil {
 		return fmt.Errorf("encrypt refresh token: %w", err)
 	}
-	data := Data{
-		AccessToken:           accessToken,
-		RefreshTokenEncrypted: encRefresh,
-		AccessExpiresAt:       accessExpiresAt,
-		RefreshExpiresAt:      refreshExpiresAt,
-	}
+	data.RefreshTokenEncrypted = encRefresh
 	raw, err := json.Marshal(data)
 	if err != nil {
 		return err
@@ -86,24 +88,35 @@ func (s *Store) Rotate(ctx context.Context, oldID, newID string) error {
 	if err != nil {
 		return err
 	}
-	if err := s.Save(ctx, newID, data.AccessToken, refresh, data.AccessExpiresAt, data.RefreshExpiresAt); err != nil {
+	if err := s.Save(ctx, newID, *data, refresh); err != nil {
 		return err
 	}
 	return s.Delete(ctx, oldID)
 }
 
-func (s *Store) SavePKCE(ctx context.Context, state, verifier string) error {
-	return s.rdb.Set(ctx, "oauth:state:"+state, verifier, 10*time.Minute).Err()
-}
-
-func (s *Store) GetPKCE(ctx context.Context, state string) (string, error) {
-	v, err := s.rdb.Get(ctx, "oauth:state:"+state).Result()
-	if err == redis.Nil {
-		return "", nil
+func (s *Store) SaveOAuthState(ctx context.Context, state string, oauth OAuthState) error {
+	raw, err := json.Marshal(oauth)
+	if err != nil {
+		return err
 	}
-	return v, err
+	return s.rdb.Set(ctx, "oauth:state:"+state, raw, 10*time.Minute).Err()
 }
 
-func (s *Store) DeletePKCE(ctx context.Context, state string) error {
+func (s *Store) GetOAuthState(ctx context.Context, state string) (*OAuthState, error) {
+	raw, err := s.rdb.Get(ctx, "oauth:state:"+state).Bytes()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var oauth OAuthState
+	if err := json.Unmarshal(raw, &oauth); err != nil {
+		return nil, err
+	}
+	return &oauth, nil
+}
+
+func (s *Store) DeleteOAuthState(ctx context.Context, state string) error {
 	return s.rdb.Del(ctx, "oauth:state:"+state).Err()
 }

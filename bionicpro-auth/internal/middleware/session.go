@@ -76,7 +76,10 @@ func (m *SessionManager) refreshAccess(ctx context.Context, sessionID string, da
 	if tr.RefreshExpiresIn == 0 {
 		refreshExp = time.Now().Add(24 * time.Hour)
 	}
-	if err := m.store.Save(ctx, sessionID, tr.AccessToken, tr.RefreshToken, accessExp, refreshExp); err != nil {
+	data.AccessToken = tr.AccessToken
+	data.AccessExpiresAt = accessExp
+	data.RefreshExpiresAt = refreshExp
+	if err := m.store.Save(ctx, sessionID, *data, tr.RefreshToken); err != nil {
 		return nil, err
 	}
 	return m.store.Get(ctx, sessionID)

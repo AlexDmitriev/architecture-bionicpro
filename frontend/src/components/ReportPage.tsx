@@ -5,6 +5,8 @@ const authBase = process.env.REACT_APP_AUTH_URL || 'http://localhost:8081';
 type SessionInfo = {
   authenticated: boolean;
   access_expires_at?: string;
+  needs_consent?: boolean;
+  identity_provider?: string;
 };
 
 const ReportPage: React.FC = () => {
@@ -23,6 +25,10 @@ const ReportPage: React.FC = () => {
         return;
       }
       const data: SessionInfo = await res.json();
+      if (data.authenticated && data.needs_consent) {
+        window.location.href = '/consent';
+        return;
+      }
       setAuthenticated(Boolean(data.authenticated));
     } catch {
       setAuthenticated(false);
@@ -37,6 +43,10 @@ const ReportPage: React.FC = () => {
 
   const login = () => {
     window.location.href = `${authBase}/auth/login`;
+  };
+
+  const loginYandex = () => {
+    window.location.href = `${authBase}/auth/login/yandex`;
   };
 
   const logout = async () => {
@@ -84,12 +94,18 @@ const ReportPage: React.FC = () => {
 
   if (!authenticated) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 gap-3">
         <button
           onClick={login}
           className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
         >
-          Login
+          Login (Keycloak)
+        </button>
+        <button
+          onClick={loginYandex}
+          className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+        >
+          Войти через Яндекс ID
         </button>
       </div>
     );

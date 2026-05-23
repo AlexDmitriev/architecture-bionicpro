@@ -47,7 +47,7 @@ func (c *Client) logoutEndpoint() string {
 		strings.TrimRight(c.cfg.KeycloakURL, "/"), c.cfg.KeycloakRealm)
 }
 
-func (c *Client) BuildAuthURL(state, codeChallenge string) string {
+func (c *Client) BuildAuthURL(state, codeChallenge string, idpHint string) string {
 	q := url.Values{}
 	q.Set("client_id", c.cfg.KeycloakClientID)
 	q.Set("redirect_uri", c.cfg.RedirectURI)
@@ -56,6 +56,9 @@ func (c *Client) BuildAuthURL(state, codeChallenge string) string {
 	q.Set("state", state)
 	q.Set("code_challenge", codeChallenge)
 	q.Set("code_challenge_method", "S256")
+	if idpHint != "" {
+		q.Set("kc_idp_hint", idpHint)
+	}
 	return c.authEndpoint() + "?" + q.Encode()
 }
 

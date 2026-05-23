@@ -142,8 +142,10 @@
       "redirectUris": ["http://localhost:8081/auth/callback"],
       "webOrigins": ["http://localhost:3000", "http://localhost:8081"],
       "attributes": {
-        "pkce.code.challenge.method": "S256"
-      }
+        "pkce.code.challenge.method": "S256",
+        "oauth2.token.exchange.grant.enabled": "true"
+      },
+      "standardTokenExchangeEnabled": true
     },
     {
       "clientId": "reports-api",
@@ -309,5 +311,98 @@
         }
       }
     ]
-  }
+  },
+  "identityProviders": [
+    {
+      "alias": "yandex",
+      "displayName": "Яндекс ID",
+      "providerId": "oidc",
+      "enabled": true,
+      "updateProfileFirstLoginMode": "on",
+      "trustEmail": true,
+      "storeToken": true,
+      "addReadTokenRoleOnCreate": false,
+      "authenticateByDefault": false,
+      "linkOnly": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "hideOnLoginPage": "false",
+        "clientId": "YANDEX_CLIENT_ID",
+        "clientSecret": "YANDEX_CLIENT_SECRET",
+        "authorizationUrl": "https://oauth.yandex.ru/authorize",
+        "tokenUrl": "https://oauth.yandex.ru/token",
+        "userInfoUrl": "https://login.yandex.ru/info?format=json",
+        "issuer": "https://oauth.yandex.ru",
+        "defaultScope": "login:info login:email login:avatar",
+        "syncMode": "IMPORT",
+        "clientAuthMethod": "client_secret_post",
+        "validateSignature": "false",
+        "useJwksUrl": "false",
+        "pkceEnabled": "true",
+        "backchannelSupported": "false"
+      }
+    }
+  ],
+  "identityProviderMappers": [
+    {
+      "name": "yandex-email",
+      "identityProviderAlias": "yandex",
+      "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "claim": "default_email",
+        "user.attribute": "email"
+      }
+    },
+    {
+      "name": "yandex-first-name",
+      "identityProviderAlias": "yandex",
+      "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "claim": "first_name",
+        "user.attribute": "firstName"
+      }
+    },
+    {
+      "name": "yandex-last-name",
+      "identityProviderAlias": "yandex",
+      "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "claim": "last_name",
+        "user.attribute": "lastName"
+      }
+    },
+    {
+      "name": "yandex-login",
+      "identityProviderAlias": "yandex",
+      "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "claim": "login",
+        "user.attribute": "username"
+      }
+    },
+    {
+      "name": "yandex-display-name",
+      "identityProviderAlias": "yandex",
+      "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "claim": "display_name",
+        "user.attribute": "nickname"
+      }
+    },
+    {
+      "name": "yandex-id-attr",
+      "identityProviderAlias": "yandex",
+      "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "claim": "id",
+        "user.attribute": "yandex_id"
+      }
+    }
+  ]
 }

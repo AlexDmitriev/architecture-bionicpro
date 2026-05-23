@@ -54,6 +54,23 @@ services:
       openldap:
         condition: service_healthy
 
+  profiles_db:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: profiles
+      POSTGRES_USER: profiles
+      POSTGRES_PASSWORD: profiles
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - profiles-data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U profiles -d profiles"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     ports:
@@ -81,11 +98,16 @@ services:
       TOKEN_ENCRYPTION_KEY: dev-only-32-byte-encryption-key!!
       COOKIE_SECURE: "false"
       SESSION_COOKIE_NAME: bionicpro_session
+      DATABASE_URL: postgres://profiles:profiles@profiles_db:5432/profiles?sslmode=disable
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - redis
-      - keycloak
+      redis:
+        condition: service_started
+      keycloak:
+        condition: service_started
+      profiles_db:
+        condition: service_healthy
 
   frontend:
     build:
@@ -102,3 +124,4 @@ services:
 volumes:
   redis-data:
   openldap-data:
+  profiles-data:

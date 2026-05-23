@@ -8,13 +8,15 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
 	"bionicpro-auth/internal/config"
 	"bionicpro-auth/internal/handlers"
 	"bionicpro-auth/internal/keycloak"
-	"bionicpro-auth/internal/session"
 	sessmw "bionicpro-auth/internal/middleware"
+	"bionicpro-auth/internal/profile"
+	"bionicpro-auth/internal/session"
 )
 
 func corsMiddleware(frontendURL string) func(http.Handler) http.Handler {
@@ -44,10 +46,18 @@ func main() {
 		log.Fatalf("redis: %v", err)
 	}
 
+	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("postgres: %v", err)
+	}
+	defer pool.Close()
+
 	store := session.NewStore(rdb, cfg.EncryptionKey, cfg.SessionTTL)
 	kc := keycloak.NewClient(cfg)
 	sessMgr := sessmw.NewSessionManager(cfg, store, kc)
-	authH := handlers.NewAuthHandler(cfg, store, kc, sessMgr)
+	profiles := profile.NewRepository(pool)
+	authH := handlers.NewAuthHandler(cfg, store, kc, sessMgr, profiles)
+	consentH := handlers.NewConsentHandler(cfg, profiles, kc)
 	reportsH := handlers.NewReportsHandler(cfg)
 
 	r := chi.NewRouter()
@@ -61,12 +71,20 @@ func main() {
 
 	r.Route("/auth", func(ar chi.Router) {
 		ar.Get("/login", authH.Login)
+		ar.Get("/login/yandex", authH.LoginYandex)
 		ar.Get("/callback", authH.Callback)
 		ar.Post("/logout", authH.Logout)
 
 		ar.Group(func(pr chi.Router) {
 			pr.Use(sessMgr.GetOptionalSession())
 			pr.Get("/me", authH.Me)
+		})
+
+		ar.Group(func(pr chi.Router) {
+			pr.Use(sessMgr.EnsureSession(false))
+			pr.Get("/consent/status", consentH.Status)
+			pr.Post("/consent", consentH.Accept)
+			pr.Get("/profile", consentH.Profile)
 		})
 
 		ar.Group(func(pr chi.Router) {
