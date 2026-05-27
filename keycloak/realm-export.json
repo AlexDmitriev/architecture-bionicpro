@@ -144,8 +144,7 @@
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "oauth2.token.exchange.grant.enabled": "true"
-      },
-      "standardTokenExchangeEnabled": true
+      }
     },
     {
       "clientId": "reports-api",
@@ -160,7 +159,6 @@
       {
         "name": "bionicpro-ldap",
         "providerId": "ldap",
-        "providerType": "org.keycloak.storage.UserStorageProvider",
         "config": {
           "enabled": ["true"],
           "priority": ["1"],
@@ -197,7 +195,6 @@
             {
               "name": "username",
               "providerId": "user-attribute-ldap-mapper",
-              "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
               "config": {
                 "ldap.attribute": ["uid"],
                 "user.model.attribute": ["username"],
@@ -208,7 +205,6 @@
             {
               "name": "email",
               "providerId": "user-attribute-ldap-mapper",
-              "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
               "config": {
                 "ldap.attribute": ["mail"],
                 "user.model.attribute": ["email"],
@@ -219,7 +215,6 @@
             {
               "name": "first name",
               "providerId": "user-attribute-ldap-mapper",
-              "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
               "config": {
                 "ldap.attribute": ["cn"],
                 "user.model.attribute": ["firstName"],
@@ -230,7 +225,6 @@
             {
               "name": "last name",
               "providerId": "user-attribute-ldap-mapper",
-              "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
               "config": {
                 "ldap.attribute": ["sn"],
                 "user.model.attribute": ["lastName"],
@@ -241,13 +235,12 @@
             {
               "name": "groups",
               "providerId": "group-ldap-mapper",
-              "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
               "config": {
                 "mode": ["READ_ONLY"],
                 "groups.dn": ["dc=example,dc=com"],
                 "group.name.ldap.attribute": ["cn"],
                 "group.object.classes": ["groupOfNames"],
-                "groups.path": ["/ldap"],
+                "groups.path": ["/"],
                 "membership.ldap.attribute": ["member"],
                 "membership.attribute.type": ["DN"],
                 "user.roles.retrieve.strategy": ["LOAD_GROUPS_BY_MEMBER_ATTRIBUTE"],
@@ -259,7 +252,6 @@
             {
               "name": "role-user",
               "providerId": "role-ldap-mapper",
-              "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
               "config": {
                 "mode": ["READ_ONLY"],
                 "roles.dn": ["dc=example,dc=com"],
@@ -276,7 +268,6 @@
             {
               "name": "role-prothetic_user",
               "providerId": "role-ldap-mapper",
-              "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
               "config": {
                 "mode": ["READ_ONLY"],
                 "roles.dn": ["dc=example,dc=com"],
@@ -293,7 +284,6 @@
             {
               "name": "role-administrator",
               "providerId": "role-ldap-mapper",
-              "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
               "config": {
                 "mode": ["READ_ONLY"],
                 "roles.dn": ["dc=example,dc=com"],
@@ -339,6 +329,7 @@
         "validateSignature": "false",
         "useJwksUrl": "false",
         "pkceEnabled": "true",
+        "pkceMethod": "S256",
         "backchannelSupported": "false"
       }
     }

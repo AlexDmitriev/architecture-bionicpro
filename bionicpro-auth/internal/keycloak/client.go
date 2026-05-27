@@ -39,7 +39,7 @@ func (c *Client) tokenEndpoint() string {
 
 func (c *Client) authEndpoint() string {
 	return fmt.Sprintf("%s/realms/%s/protocol/openid-connect/auth",
-		strings.TrimRight(c.cfg.KeycloakURL, "/"), c.cfg.KeycloakRealm)
+		strings.TrimRight(c.cfg.KeycloakPublicURL, "/"), c.cfg.KeycloakRealm)
 }
 
 func (c *Client) logoutEndpoint() string {

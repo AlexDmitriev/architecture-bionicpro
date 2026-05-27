@@ -7,12 +7,13 @@ services:
       LDAP_DOMAIN: example.com
       LDAP_ADMIN_PASSWORD: admin
       LDAP_CONFIG_PASSWORD: config
+      LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
       LDAP_TLS: "false"
       LDAP_READONLY_USER: "false"
     ports:
       - "389:389"
     volumes:
-      - ./ldap/config.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/config.ldif
+      - ./ldap/custom:/container/service/slapd/assets/config/bootstrap/ldif/custom
       - openldap-data:/var/lib/ldap
     healthcheck:
       test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost", "-b", "dc=example,dc=com", "-D", "cn=admin,dc=example,dc=com", "-w", "admin"]
@@ -37,6 +38,9 @@ services:
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: "8080"
+      KC_HOSTNAME_STRICT: "false"
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak_db:5432/keycloak_db
       KC_DB_USERNAME: keycloak_user
@@ -53,6 +57,24 @@ services:
         condition: service_started
       openldap:
         condition: service_healthy
+
+  keycloak-bootstrap:
+    image: quay.io/keycloak/keycloak:21.1
+    entrypoint: ["/bin/sh", "/opt/keycloak/bootstrap/keycloak-bootstrap-client.sh"]
+    environment:
+      KEYCLOAK_SERVER: http://keycloak:8080
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KEYCLOAK_REALM: reports-realm
+      KEYCLOAK_CLIENT_ID: bionicpro-auth
+      KEYCLOAK_CLIENT_SECRET: bionicpro-auth-secret-change-me
+      REDIRECT_URI: http://localhost:8081/auth/callback
+      FRONTEND_URL: http://localhost:3000
+    volumes:
+      - ./scripts/keycloak-bootstrap-client.sh:/opt/keycloak/bootstrap/keycloak-bootstrap-client.sh:ro
+    depends_on:
+      keycloak:
+        condition: service_started
 
   profiles_db:
     image: postgres:14
@@ -87,6 +109,7 @@ services:
     environment:
       ADDR: ":8081"
       KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_PUBLIC_URL: http://localhost:8080
       KEYCLOAK_REALM: reports-realm
       KEYCLOAK_CLIENT_ID: bionicpro-auth
       KEYCLOAK_CLIENT_SECRET: bionicpro-auth-secret-change-me
@@ -106,6 +129,8 @@ services:
         condition: service_started
       keycloak:
         condition: service_started
+      keycloak-bootstrap:
+        condition: service_completed_successfully
       profiles_db:
         condition: service_healthy
 

@@ -9,6 +9,7 @@ import (
 type Config struct {
 	Addr              string
 	KeycloakURL       string
+	KeycloakPublicURL string
 	KeycloakRealm     string
 	KeycloakClientID  string
 	KeycloakSecret    string
@@ -34,6 +35,10 @@ func Load() Config {
 	return Config{
 		Addr:             env("ADDR", ":8081"),
 		KeycloakURL:      env("KEYCLOAK_URL", "http://keycloak:8080"),
+		KeycloakPublicURL: env(
+			"KEYCLOAK_PUBLIC_URL",
+			env("KEYCLOAK_URL", "http://keycloak:8080"),
+		),
 		KeycloakRealm:    env("KEYCLOAK_REALM", "reports-realm"),
 		KeycloakClientID: env("KEYCLOAK_CLIENT_ID", "bionicpro-auth"),
 		KeycloakSecret:   env("KEYCLOAK_CLIENT_SECRET", "bionicpro-auth-secret-change-me"),
