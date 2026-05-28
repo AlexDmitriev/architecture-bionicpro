@@ -10,6 +10,10 @@ type SessionInfo = {
 };
 
 type ReportData = Record<string, unknown>;
+type ReportResponse = {
+  report_url: string;
+  cached: boolean;
+};
 
 const ReportPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -17,6 +21,7 @@ const ReportPage: React.FC = () => {
   const [authenticated, setAuthenticated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ReportData | null>(null);
+  const [reportURL, setReportURL] = useState<string | null>(null);
 
   const checkSession = useCallback(async () => {
     try {
@@ -65,6 +70,7 @@ const ReportPage: React.FC = () => {
       setLoading(true);
       setError(null);
       setReport(null);
+      setReportURL(null);
 
       const response = await fetch(`${authBase}/auth/reports`, {
         credentials: 'include',
@@ -81,8 +87,15 @@ const ReportPage: React.FC = () => {
         throw new Error(text || `Ошибка запроса (${response.status})`);
       }
 
-      const data = (await response.json()) as ReportData;
-      setReport(data);
+      const data = (await response.json()) as ReportResponse;
+      setReportURL(data.report_url);
+
+      const reportResponse = await fetch(data.report_url);
+      if (!reportResponse.ok) {
+        throw new Error(`Не удалось получить отчёт из CDN (${reportResponse.status})`);
+      }
+      const reportPayload = (await reportResponse.json()) as ReportData;
+      setReport(reportPayload);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Произошла ошибка');
     } finally {
@@ -144,6 +157,14 @@ const ReportPage: React.FC = () => {
         {report && (
           <div className="mt-4">
             <h2 className="text-lg font-semibold mb-2">Ваш отчёт</h2>
+            {reportURL && (
+              <div className="mb-2 text-sm text-blue-700">
+                CDN URL:{' '}
+                <a href={reportURL} target="_blank" rel="noreferrer" className="underline">
+                  {reportURL}
+                </a>
+              </div>
+            )}
             <pre className="p-4 bg-gray-100 rounded text-sm overflow-x-auto">
               {JSON.stringify(report, null, 2)}
             </pre>

@@ -194,6 +194,29 @@ services:
     volumes:
       - redis-data:/data
 
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9100:9000"
+      - "9101:9001"
+    volumes:
+      - minio-data:/data
+
+  reports-cdn:
+    image: nginx:1.27-alpine
+    ports:
+      - "8082:80"
+    volumes:
+      - ./cdn/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - reports-cdn-cache:/var/cache/nginx/reports
+    depends_on:
+      minio:
+        condition: service_started
+
   bionicpro-auth:
     build:
       context: ./bionicpro-auth
@@ -244,11 +267,23 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: reports-realm
       DATABASE_URL: postgres://profiles:profiles@profiles_db:5432/profiles?sslmode=disable
+      S3_ENDPOINT: minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET: reports
+      S3_USE_SSL: "false"
+      CDN_BASE_URL: http://localhost:8082/reports
+      REPORTS_DATA_VERSION: v1
+      CDN_MAX_AGE_SECONDS: "3600"
     depends_on:
       keycloak:
         condition: service_started
       profiles_db:
         condition: service_healthy
+      minio:
+        condition: service_started
+      reports-cdn:
+        condition: service_started
 
   frontend:
     build:
@@ -270,3 +305,5 @@ volumes:
   redis-data:
   openldap-data:
   profiles-data:
+  minio-data:
+  reports-cdn-cache:

@@ -20,6 +20,8 @@ docker compose up --build -d
 | OpenLDAP | ldap://localhost:389 |
 | Redis | localhost:6379 |
 | Profiles DB | localhost:5434 |
+| Minio (S3 API) | API: `http://localhost:9100`, Console: `http://localhost:9101` (minioadmin / minioadmin) |
+| Reports CDN (Nginx) | http://localhost:8082 |
 
 ## Яндекс ID (OAuth 2.0 через bionicpro-auth)
 
@@ -142,6 +144,30 @@ cd frontend
 npm install
 REACT_APP_AUTH_URL=http://localhost:8081 npm start
 ```
+
+## Кэширование отчётов через S3 + CDN
+
+- `bionicpro-reports` больше не отдаёт JSON отчёта напрямую из OLAP при каждом запросе.
+- Сначала сервис проверяет наличие объекта в S3 (`minio`) и возвращает CDN ссылку.
+- Если объекта нет, отчёт читается из OLAP один раз, сохраняется в S3 и затем отдаётся CDN ссылка.
+
+### Формат ответа API отчётов
+
+`GET /reports` возвращает:
+
+```json
+{
+  "report_url": "http://localhost:8082/reports/v1/<hash>.json",
+  "cached": true
+}
+```
+
+### Обновление кэша при новом ETL
+
+- Структура ключа в S3: `<REPORTS_DATA_VERSION>/<sha256(user_id)>.json`.
+- Для новой выгрузки ETL нужно сменить `REPORTS_DATA_VERSION` (например, `v2` или `2026-05-28`).
+- После смены версии сервис начинает читать/писать в новый префикс, старые ключи не мешают.
+- Nginx CDN кэширует объекты по URL, поэтому новая версия автоматически даёт `cache miss` и прогрев без ручной инвалидации.
 
 ## Сборка только auth-сервиса
 
