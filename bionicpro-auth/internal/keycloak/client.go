@@ -82,6 +82,17 @@ func (c *Client) RefreshToken(refreshToken string) (*TokenResponse, error) {
 	return c.postToken(data)
 }
 
+func (c *Client) ExchangePassword(username, password string) (*TokenResponse, error) {
+	data := url.Values{}
+	data.Set("grant_type", "password")
+	data.Set("client_id", c.cfg.KeycloakClientID)
+	data.Set("client_secret", c.cfg.KeycloakSecret)
+	data.Set("scope", "openid")
+	data.Set("username", username)
+	data.Set("password", password)
+	return c.postToken(data)
+}
+
 func (c *Client) postToken(data url.Values) (*TokenResponse, error) {
 	req, err := http.NewRequest(http.MethodPost, c.tokenEndpoint(), strings.NewReader(data.Encode()))
 	if err != nil {

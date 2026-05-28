@@ -21,24 +21,19 @@ docker compose up --build -d
 | Redis | localhost:6379 |
 | Profiles DB | localhost:5434 |
 
-## Яндекс ID (OAuth 2.0 Identity Brokering)
+## Яндекс ID (OAuth 2.0 через bionicpro-auth)
 
 1. Создайте приложение на [oauth.yandex.ru](https://oauth.yandex.ru/).
 2. **Redirect URI** в кабинете Яндекса:
-   `http://localhost:8080/realms/reports-realm/broker/yandex/endpoint`
+   `http://localhost:8081/auth/callback`
 3. Скопируйте `.env.example` → `.env` и укажите `YANDEX_CLIENT_ID` / `YANDEX_CLIENT_SECRET`.
-4. После `docker compose up` выполните:
-
-```bash
-export $(grep -v '^#' .env | xargs)
-./scripts/configure-yandex-idp.sh
-```
 
 ### Поток
 
-1. **Войти через Яндекс ID** → Keycloak (brokering) → Яндекс OAuth (scope: профиль, email, аватар).
-2. После входа — экран **согласия** на использование данных профиля.
-3. При подтверждении `bionicpro-auth` запрашивает профиль у `https://login.yandex.ru/info` и сохраняет в PostgreSQL (`yandex_user_profiles`).
+1. **Войти через Яндекс ID** -> `bionicpro-auth` -> Яндекс OAuth.
+2. Callback приходит в `bionicpro-auth` (`/auth/callback`), сервис сам меняет `code` на токен Яндекса.
+3. `bionicpro-auth` получает профиль у `https://login.yandex.ru/info`, сохраняет его в PostgreSQL (`yandex_user_profiles`) и создаёт серверную сессию.
+4. При первом входе показывается экран согласия на использование данных.
 
 ### Проверка
 
@@ -50,7 +45,7 @@ docker compose exec profiles_db psql -U profiles -d profiles -c \
   "SELECT keycloak_sub, yandex_id, email, display_name, consent_granted_at FROM yandex_user_profiles;"
 ```
 
-В Keycloak Admin: **Identity Providers** → `yandex`, **Clients** → `bionicpro-auth` → включите **Token Exchange** и разрешите обмен на issuer `yandex` (для прямого запроса API Яндекса).
+Keycloak в этом сценарии используется как основной IAM для логина по LDAP и хранения пользователей, а поток Яндекс OAuth выполняется в `bionicpro-auth`.
 
 ## LDAP и зарубежное представительство
 

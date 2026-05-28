@@ -37,7 +37,7 @@ if [ -z "${CLIENT_UUID}" ]; then
     -s "secret=${CLIENT_SECRET}" \
     -s "standardFlowEnabled=true" \
     -s "implicitFlowEnabled=false" \
-    -s "directAccessGrantsEnabled=false" \
+    -s "directAccessGrantsEnabled=true" \
     -s "serviceAccountsEnabled=false" \
     -s "redirectUris=[\"${REDIRECT_URI}\"]" \
     -s "webOrigins=[\"${FRONTEND_URL}\",\"http://localhost:8081\"]" \
@@ -50,12 +50,26 @@ else
     -s "secret=${CLIENT_SECRET}" \
     -s "standardFlowEnabled=true" \
     -s "implicitFlowEnabled=false" \
-    -s "directAccessGrantsEnabled=false" \
+    -s "directAccessGrantsEnabled=true" \
     -s "serviceAccountsEnabled=false" \
     -s "redirectUris=[\"${REDIRECT_URI}\"]" \
     -s "webOrigins=[\"${FRONTEND_URL}\",\"http://localhost:8081\"]" \
     -s 'attributes."pkce.code.challenge.method"=S256' \
     -s 'attributes."oauth2.token.exchange.grant.enabled"=true' >/dev/null
+fi
+
+echo "Ensuring LDAP users are synced to realm ${KEYCLOAK_REALM}..."
+LDAP_PROVIDER_ID="$(
+  /opt/keycloak/bin/kcadm.sh get components -r "${KEYCLOAK_REALM}" -q "providerType=org.keycloak.storage.UserStorageProvider" \
+  | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
+  | sed -n '1p'
+)"
+
+if [ -n "${LDAP_PROVIDER_ID}" ]; then
+  /opt/keycloak/bin/kcadm.sh create "user-storage/${LDAP_PROVIDER_ID}/sync?action=triggerFullSync" -r "${KEYCLOAK_REALM}" >/dev/null || true
+  echo "LDAP full sync triggered for provider ${LDAP_PROVIDER_ID}."
+else
+  echo "LDAP provider not found in realm ${KEYCLOAK_REALM}, skipping sync."
 fi
 
 echo "Keycloak bootstrap completed."

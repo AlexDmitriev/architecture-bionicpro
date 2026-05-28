@@ -64,14 +64,14 @@ func (h *ConsentHandler) Accept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rec, err := h.fetchAndBuildProfile(data.AccessToken, data.KeycloakSub)
-	if err != nil {
-		http.Error(w, `{"error":"failed to fetch yandex profile"}`, http.StatusBadGateway)
+	if err := h.profiles.GrantConsent(r.Context(), data.KeycloakSub); err != nil {
+		http.Error(w, `{"error":"failed to save consent"}`, http.StatusInternalServerError)
 		return
 	}
 
-	if err := h.profiles.UpsertWithConsent(r.Context(), *rec); err != nil {
-		http.Error(w, `{"error":"failed to save profile"}`, http.StatusInternalServerError)
+	rec, err := h.profiles.GetBySub(r.Context(), data.KeycloakSub)
+	if err != nil {
+		http.Error(w, `{"error":"profile not found"}`, http.StatusNotFound)
 		return
 	}
 
@@ -100,6 +100,20 @@ func (h *ConsentHandler) Profile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ConsentHandler) fetchAndBuildProfile(keycloakAccessToken, keycloakSub string) (*profile.Record, error) {
+	if yp, raw, err := h.yandex.FetchProfile(keycloakAccessToken); err == nil {
+		return &profile.Record{
+			KeycloakSub: keycloakSub,
+			YandexID:    yp.ID,
+			Login:       yp.Login,
+			Email:       yp.DefaultEmail,
+			FirstName:   yp.FirstName,
+			LastName:    yp.LastName,
+			DisplayName: yp.DisplayName,
+			AvatarURL:   yp.AvatarURL(),
+			RawProfile:  raw,
+		}, nil
+	}
+
 	yandexToken, err := h.kc.ExchangeForIdpToken(keycloakAccessToken, "yandex")
 	if err != nil {
 		ui, uerr := h.kc.FetchUserInfo(keycloakAccessToken)
@@ -124,15 +138,15 @@ func (h *ConsentHandler) fetchAndBuildProfile(keycloakAccessToken, keycloakSub s
 	}
 
 	return &profile.Record{
-		KeycloakSub:  keycloakSub,
-		YandexID:     yp.ID,
-		Login:        yp.Login,
-		Email:        yp.DefaultEmail,
-		FirstName:    yp.FirstName,
-		LastName:     yp.LastName,
-		DisplayName:  yp.DisplayName,
-		AvatarURL:    yp.AvatarURL(),
-		RawProfile:   raw,
+		KeycloakSub: keycloakSub,
+		YandexID:    yp.ID,
+		Login:       yp.Login,
+		Email:       yp.DefaultEmail,
+		FirstName:   yp.FirstName,
+		LastName:    yp.LastName,
+		DisplayName: yp.DisplayName,
+		AvatarURL:   yp.AvatarURL(),
+		RawProfile:  raw,
 	}, nil
 }
 

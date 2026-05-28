@@ -9,11 +9,14 @@ type SessionInfo = {
   identity_provider?: string;
 };
 
+type ReportData = Record<string, unknown>;
+
 const ReportPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [report, setReport] = useState<ReportData | null>(null);
 
   const checkSession = useCallback(async () => {
     try {
@@ -57,31 +60,31 @@ const ReportPage: React.FC = () => {
     setAuthenticated(false);
   };
 
-  const downloadReport = async () => {
+  const fetchReport = async () => {
     try {
       setLoading(true);
       setError(null);
+      setReport(null);
 
       const response = await fetch(`${authBase}/auth/reports`, {
         credentials: 'include',
       });
 
       if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error('Доступ к чужому отчёту запрещён');
+        }
+        if (response.status === 404) {
+          throw new Error('Отчёт по вашему пользователю пока не найден');
+        }
         const text = await response.text();
-        throw new Error(text || `Request failed (${response.status})`);
+        throw new Error(text || `Ошибка запроса (${response.status})`);
       }
 
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'report';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      const data = (await response.json()) as ReportData;
+      setReport(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : 'Произошла ошибка');
     } finally {
       setLoading(false);
       await checkSession();
@@ -118,13 +121,13 @@ const ReportPage: React.FC = () => {
 
         <div className="flex gap-3">
           <button
-            onClick={downloadReport}
+            onClick={fetchReport}
             disabled={loading}
             className={`px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 ${
               loading ? 'opacity-50 cursor-not-allowed' : ''
             }`}
           >
-            {loading ? 'Generating Report...' : 'Download Report'}
+            {loading ? 'Загрузка отчёта...' : 'Получить отчёт'}
           </button>
           <button
             onClick={logout}
@@ -136,6 +139,15 @@ const ReportPage: React.FC = () => {
 
         {error && (
           <div className="mt-4 p-4 bg-red-100 text-red-700 rounded">{error}</div>
+        )}
+
+        {report && (
+          <div className="mt-4">
+            <h2 className="text-lg font-semibold mb-2">Ваш отчёт</h2>
+            <pre className="p-4 bg-gray-100 rounded text-sm overflow-x-auto">
+              {JSON.stringify(report, null, 2)}
+            </pre>
+          </div>
         )}
       </div>
     </div>

@@ -1,4 +1,36 @@
 services:
+  crm_db:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: crm
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: crm
+    volumes:
+      - ./misc/crm-db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./misc/crm-db/crm.csv:/docker-entrypoint-initdb.d/crm.csv
+      - crm-data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm -d crm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  airflow_db:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    volumes:
+      - airflow-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   openldap:
     image: osixia/openldap:1.5.0
     container_name: openldap
@@ -13,7 +45,7 @@ services:
     ports:
       - "389:389"
     volumes:
-      - ./ldap/custom:/container/service/slapd/assets/config/bootstrap/ldif/custom
+      - ./ldap:/container/service/slapd/assets/config/bootstrap/ldif/custom
       - openldap-data:/var/lib/ldap
     healthcheck:
       test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost", "-b", "dc=example,dc=com", "-D", "cn=admin,dc=example,dc=com", "-w", "admin"]
@@ -93,6 +125,68 @@ services:
       timeout: 5s
       retries: 5
 
+  airflow-init:
+    image: apache/airflow:2.9.3
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow_db:5432/airflow
+      AIRFLOW_CONN_CRM_POSTGRES: postgresql://crm:crm@crm_db:5432/crm
+      AIRFLOW_CONN_TELEMETRY_POSTGRES: postgresql://profiles:profiles@profiles_db:5432/profiles
+      AIRFLOW_CONN_OLAP_POSTGRES: postgresql://profiles:profiles@profiles_db:5432/profiles
+    command: >
+      bash -c "airflow db migrate &&
+      airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - airflow-logs:/opt/airflow/logs
+      - airflow-plugins:/opt/airflow/plugins
+    depends_on:
+      airflow_db:
+        condition: service_healthy
+      profiles_db:
+        condition: service_healthy
+      crm_db:
+        condition: service_healthy
+
+  airflow-webserver:
+    image: apache/airflow:2.9.3
+    command: webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow_db:5432/airflow
+      AIRFLOW_CONN_CRM_POSTGRES: postgresql://crm:crm@crm_db:5432/crm
+      AIRFLOW_CONN_TELEMETRY_POSTGRES: postgresql://profiles:profiles@profiles_db:5432/profiles
+      AIRFLOW_CONN_OLAP_POSTGRES: postgresql://profiles:profiles@profiles_db:5432/profiles
+    ports:
+      - "8088:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - airflow-logs:/opt/airflow/logs
+      - airflow-plugins:/opt/airflow/plugins
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.3
+    command: scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow_db:5432/airflow
+      AIRFLOW_CONN_CRM_POSTGRES: postgresql://crm:crm@crm_db:5432/crm
+      AIRFLOW_CONN_TELEMETRY_POSTGRES: postgresql://profiles:profiles@profiles_db:5432/profiles
+      AIRFLOW_CONN_OLAP_POSTGRES: postgresql://profiles:profiles@profiles_db:5432/profiles
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - airflow-logs:/opt/airflow/logs
+      - airflow-plugins:/opt/airflow/plugins
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
   redis:
     image: redis:7-alpine
     ports:
@@ -114,16 +208,19 @@ services:
       KEYCLOAK_CLIENT_ID: bionicpro-auth
       KEYCLOAK_CLIENT_SECRET: bionicpro-auth-secret-change-me
       REDIRECT_URI: http://localhost:8081/auth/callback
+      YANDEX_REDIRECT_URI: http://localhost:8081/auth/callback
+      YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}
+      YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET:-}
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
       FRONTEND_URL: http://localhost:3000
-      REPORTS_API_URL: http://host.docker.internal:8000
+      REPORTS_API_URL: http://bionicpro-reports:8000
       REDIS_ADDR: redis:6379
       SESSION_TTL_MINUTES: "30"
       TOKEN_ENCRYPTION_KEY: dev-only-32-byte-encryption-key!!
       COOKIE_SECURE: "false"
       SESSION_COOKIE_NAME: bionicpro_session
       DATABASE_URL: postgres://profiles:profiles@profiles_db:5432/profiles?sslmode=disable
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_started
@@ -131,6 +228,25 @@ services:
         condition: service_started
       keycloak-bootstrap:
         condition: service_completed_successfully
+      profiles_db:
+        condition: service_healthy
+      bionicpro-reports:
+        condition: service_started
+
+  bionicpro-reports:
+    build:
+      context: ./bionicpro-reports
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      ADDR: ":8000"
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: reports-realm
+      DATABASE_URL: postgres://profiles:profiles@profiles_db:5432/profiles?sslmode=disable
+    depends_on:
+      keycloak:
+        condition: service_started
       profiles_db:
         condition: service_healthy
 
@@ -147,6 +263,10 @@ services:
       - bionicpro-auth
 
 volumes:
+  crm-data:
+  airflow-db-data:
+  airflow-logs:
+  airflow-plugins:
   redis-data:
   openldap-data:
   profiles-data:

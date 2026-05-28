@@ -13,16 +13,16 @@ import (
 var ErrNotFound = errors.New("profile not found")
 
 type Record struct {
-	KeycloakSub       string
-	YandexID          string
-	Login             string
-	Email             string
-	FirstName         string
-	LastName          string
-	DisplayName       string
-	AvatarURL         string
-	RawProfile        json.RawMessage
-	ConsentGrantedAt  *time.Time
+	KeycloakSub      string
+	YandexID         string
+	Login            string
+	Email            string
+	FirstName        string
+	LastName         string
+	DisplayName      string
+	AvatarURL        string
+	RawProfile       json.RawMessage
+	ConsentGrantedAt *time.Time
 }
 
 type Repository struct {
@@ -88,6 +88,38 @@ func (r *Repository) UpsertWithConsent(ctx context.Context, rec Record) error {
 			updated_at = NOW()`,
 		rec.KeycloakSub, rec.YandexID, rec.Login, rec.Email,
 		rec.FirstName, rec.LastName, rec.DisplayName, rec.AvatarURL, rec.RawProfile,
+	)
+	return err
+}
+
+func (r *Repository) UpsertWithoutConsent(ctx context.Context, rec Record) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO yandex_user_profiles (
+			keycloak_sub, yandex_id, login, email, first_name, last_name,
+			display_name, avatar_url, raw_profile, consent_granted_at, updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,NOW())
+		ON CONFLICT (keycloak_sub) DO UPDATE SET
+			yandex_id = EXCLUDED.yandex_id,
+			login = EXCLUDED.login,
+			email = EXCLUDED.email,
+			first_name = EXCLUDED.first_name,
+			last_name = EXCLUDED.last_name,
+			display_name = EXCLUDED.display_name,
+			avatar_url = EXCLUDED.avatar_url,
+			raw_profile = EXCLUDED.raw_profile,
+			updated_at = NOW()`,
+		rec.KeycloakSub, rec.YandexID, rec.Login, rec.Email,
+		rec.FirstName, rec.LastName, rec.DisplayName, rec.AvatarURL, rec.RawProfile,
+	)
+	return err
+}
+
+func (r *Repository) GrantConsent(ctx context.Context, keycloakSub string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE yandex_user_profiles
+		SET consent_granted_at = NOW(), updated_at = NOW()
+		WHERE keycloak_sub = $1`,
+		keycloakSub,
 	)
 	return err
 }
