@@ -2,24 +2,25 @@ package report
 
 import (
 	"context"
+	"database/sql"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/ClickHouse/clickhouse-go/v2"
 )
 
 type Repository struct {
-	pool *pgxpool.Pool
+	db *sql.DB
 }
 
-func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{pool: pool}
+func NewRepository(db *sql.DB) *Repository {
+	return &Repository{db: db}
 }
 
 func (r *Repository) GetPayloadByUserID(ctx context.Context, userID string) ([]byte, error) {
-	var payload []byte
-	err := r.pool.QueryRow(
+	var payload string
+	err := r.db.QueryRowContext(
 		ctx,
-		`SELECT report_payload::text FROM olap.mart_user_report WHERE user_id = $1`,
+		`SELECT report_payload FROM olap.mart_user_report FINAL WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1`,
 		userID,
 	).Scan(&payload)
-	return payload, err
+	return []byte(payload), err
 }

@@ -2,14 +2,13 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"bionicpro-reports/internal/config"
 	"bionicpro-reports/internal/handlers"
 	"bionicpro-reports/internal/keycloak"
@@ -20,18 +19,18 @@ import (
 func main() {
 	cfg := config.Load()
 
-	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
+	chDB, err := sql.Open("clickhouse", cfg.ClickHouseDSN)
 	if err != nil {
-		log.Fatalf("postgres: %v", err)
+		log.Fatalf("clickhouse: %v", err)
 	}
-	defer pool.Close()
+	defer chDB.Close()
 
-	if err := pool.Ping(context.Background()); err != nil {
-		log.Fatalf("postgres ping: %v", err)
+	if err := chDB.PingContext(context.Background()); err != nil {
+		log.Fatalf("clickhouse ping: %v", err)
 	}
 
 	kc := keycloak.NewClient(cfg)
-	repo := report.NewRepository(pool)
+	repo := report.NewRepository(chDB)
 	reportStorage, err := storage.NewS3(cfg)
 	if err != nil {
 		log.Fatalf("s3 init: %v", err)

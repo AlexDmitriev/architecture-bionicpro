@@ -1,12 +1,11 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
-
-	"github.com/jackc/pgx/v5"
 
 	"bionicpro-reports/internal/keycloak"
 	"bionicpro-reports/internal/report"
@@ -63,7 +62,7 @@ func (h *ReportsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if !fromCache {
 		payload, repoErr := h.repo.GetPayloadByUserID(r.Context(), userID)
 		if repoErr != nil {
-			if errors.Is(repoErr, pgx.ErrNoRows) {
+			if errors.Is(repoErr, sql.ErrNoRows) {
 				http.Error(w, `{"error":"report_not_found"}`, http.StatusNotFound)
 				return
 			}

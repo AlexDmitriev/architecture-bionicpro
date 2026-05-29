@@ -7,7 +7,7 @@ import (
 
 type Config struct {
 	Addr          string
-	DatabaseURL   string
+	ClickHouseDSN string
 	KeycloakURL   string
 	KeycloakRealm string
 	S3Endpoint    string
@@ -23,7 +23,7 @@ type Config struct {
 func Load() Config {
 	return Config{
 		Addr:          env("ADDR", ":8000"),
-		DatabaseURL:   env("DATABASE_URL", "postgres://profiles:profiles@profiles_db:5432/profiles?sslmode=disable"),
+		ClickHouseDSN: env("CLICKHOUSE_DSN", "clickhouse://clickhouse:9000?database=olap"),
 		KeycloakURL:   env("KEYCLOAK_URL", "http://keycloak:8080"),
 		KeycloakRealm: env("KEYCLOAK_REALM", "reports-realm"),
 		S3Endpoint:    env("S3_ENDPOINT", "minio:9000"),

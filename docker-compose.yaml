@@ -9,6 +9,14 @@ services:
       - ./misc/crm-db/init.sql:/docker-entrypoint-initdb.d/init.sql
       - ./misc/crm-db/crm.csv:/docker-entrypoint-initdb.d/crm.csv
       - crm-data:/var/lib/postgresql/data
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_wal_senders=10
     ports:
       - "5435:5432"
     healthcheck:
@@ -194,6 +202,78 @@ services:
     volumes:
       - redis-data:/data
 
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      zookeeper:
+        condition: service_started
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  debezium-connect:
+    image: debezium/connect:2.7.3.Final
+    depends_on:
+      kafka:
+        condition: service_started
+      crm_db:
+        condition: service_healthy
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: debezium_connect_configs
+      OFFSET_STORAGE_TOPIC: debezium_connect_offsets
+      STATUS_STORAGE_TOPIC: debezium_connect_statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      ENABLE_DEBEZIUM_SCRIPTING: "false"
+
+  debezium-init:
+    image: curlimages/curl:8.8.0
+    depends_on:
+      debezium-connect:
+        condition: service_started
+    entrypoint: ["/bin/sh", "/init/register-connector.sh"]
+    volumes:
+      - ./debezium/register-connector.sh:/init/register-connector.sh:ro
+      - ./debezium/crm-connector.json:/init/crm-connector.json:ro
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    ports:
+      - "8123:8123"
+      - "9002:9000"
+    environment:
+      CLICKHOUSE_DB: olap
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/init:/docker-entrypoint-initdb.d
+    depends_on:
+      kafka:
+        condition: service_started
+
   minio:
     image: minio/minio:RELEASE.2024-12-18T13-15-44Z
     command: server /data --console-address ":9001"
@@ -266,7 +346,7 @@ services:
       ADDR: ":8000"
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: reports-realm
-      DATABASE_URL: postgres://profiles:profiles@profiles_db:5432/profiles?sslmode=disable
+      CLICKHOUSE_DSN: clickhouse://default:clickhouse@clickhouse:9000?database=olap
       S3_ENDPOINT: minio:9000
       S3_ACCESS_KEY: minioadmin
       S3_SECRET_KEY: minioadmin
@@ -278,8 +358,8 @@ services:
     depends_on:
       keycloak:
         condition: service_started
-      profiles_db:
-        condition: service_healthy
+      clickhouse:
+        condition: service_started
       minio:
         condition: service_started
       reports-cdn:
@@ -307,3 +387,4 @@ volumes:
   profiles-data:
   minio-data:
   reports-cdn-cache:
+  clickhouse-data:
